@@ -32,6 +32,7 @@
       margin-bottom: 30px;
       border-bottom: 3px solid #667eea;
       padding-bottom: 20px;
+      position: relative;
     }
 
     .header h1 {
@@ -43,6 +44,28 @@
     .header p {
       color: #666;
       font-size: 14px;
+    }
+
+    .logout-btn {
+      position: absolute;
+      top: 0;
+      right: 0;
+      padding: 8px 15px;
+      background: #ff6b6b;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 12px;
+      cursor: pointer;
+      display: none;
+    }
+
+    .logout-btn:hover {
+      background: #ee5a52;
+    }
+
+    .logout-btn.show {
+      display: block;
     }
 
     .section {
@@ -372,6 +395,16 @@
       color: #333;
     }
 
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .button-group .btn {
+      flex: 1;
+    }
+
     .loading {
       text-align: center;
       color: #666;
@@ -413,6 +446,7 @@
 <body>
   <div class="container">
     <div class="header">
+      <button class="logout-btn" id="logoutBtn" onclick="logout()">🚪 Logout</button>
       <h1>📝 Ujian Online TKA</h1>
       <p>Sistem Ujian Online Berbasis Google Apps Script</p>
     </div>
@@ -455,7 +489,9 @@
       </div>
       <div class="result-message" id="resultMessage"></div>
       <div class="result-details" id="resultDetails"></div>
-      <button class="btn" onclick="location.reload()">Mulai Ujian Baru</button>
+      <div class="button-group">
+        <button class="btn" onclick="logout()">🚪 Logout & Ujian Baru</button>
+      </div>
     </div>
   </div>
 
@@ -465,6 +501,41 @@
     let timerInterval;
     let timeRemaining = 1800; // 30 menit dalam detik
     const EXAM_TIME = 1800; // 30 menit
+
+    // ===== CECK DATA TERSIMPAN SAAT PAGE LOAD =====
+    window.addEventListener('load', function() {
+      checkStoredData();
+    });
+
+    function checkStoredData() {
+      const studentName = localStorage.getItem('studentName');
+      const studentEmail = localStorage.getItem('studentEmail');
+      const examStarted = localStorage.getItem('examStarted');
+
+      if (studentName && studentEmail && examStarted === 'true') {
+        // Data masih tersimpan - jangan langsung lanjut, tanyakan
+        showLoginSection(); // Reset ke login screen
+      }
+    }
+
+    // ===== FUNGSI LOGOUT =====
+    function logout() {
+      if (confirm('Apakah Anda yakin ingin keluar dan mulai ujian baru?')) {
+        localStorage.removeItem('studentName');
+        localStorage.removeItem('studentEmail');
+        localStorage.removeItem('examStarted');
+        answers = {};
+        clearInterval(timerInterval);
+        location.reload();
+      }
+    }
+
+    function showLoginSection() {
+      document.getElementById('loginSection').classList.add('active');
+      document.getElementById('examSection').classList.remove('active');
+      document.getElementById('resultSection').classList.remove('active');
+      document.getElementById('logoutBtn').classList.remove('show');
+    }
 
     // ===== FUNGSI MULAI UJIAN =====
     function startExam() {
@@ -493,14 +564,19 @@
       // Simpan ke localStorage
       localStorage.setItem('studentName', name);
       localStorage.setItem('studentEmail', email);
+      localStorage.setItem('examStarted', 'true');
 
       // Tampilkan info di header ujian
       document.getElementById('examName').textContent = name;
       document.getElementById('examEmail').textContent = email;
 
+      // Tampilkan logout button
+      document.getElementById('logoutBtn').classList.add('show');
+
       // Ubah section
       document.getElementById('loginSection').classList.remove('active');
       document.getElementById('examSection').classList.add('active');
+      document.getElementById('resultSection').classList.remove('active');
 
       // Load soal
       google.script.run.withSuccessHandler(displayQuestions).getQuestions();
@@ -697,11 +773,6 @@
 
     function selectMatchingLeft(element, questionIndex, itemId) {
       element.classList.toggle('selected');
-      // Store matching answer
-      if (!answers[questionIndex]) {
-        answers[questionIndex] = {};
-      }
-      // Implementation untuk matching bisa diperluas
     }
 
     function selectMatchingRight(element, questionIndex, itemId) {
@@ -740,6 +811,7 @@
       const email = localStorage.getItem('studentEmail');
 
       clearInterval(timerInterval);
+      localStorage.removeItem('examStarted');
 
       // Ubah ke hasil section dan tampilkan loading
       document.getElementById('examSection').classList.remove('active');
@@ -811,7 +883,8 @@
       resultSection.appendChild(detailsDiv);
 
       const buttonDiv = document.createElement('div');
-      buttonDiv.innerHTML = `<button class="btn" onclick="location.reload()">Mulai Ujian Baru</button>`;
+      buttonDiv.className = 'button-group';
+      buttonDiv.innerHTML = `<button class="btn" onclick="logout()">🚪 Logout & Ujian Baru</button>`;
       resultSection.appendChild(buttonDiv);
     }
 
@@ -839,14 +912,11 @@
       const resultSection = document.getElementById('resultSection');
       resultSection.innerHTML = `
         <div class="error">${message}</div>
-        <button class="btn" onclick="location.reload()">Kembali</button>
+        <div class="button-group">
+          <button class="btn" onclick="logout()">🚪 Kembali & Coba Lagi</button>
+        </div>
       `;
     }
-
-    // Load soal saat halaman pertama kali dibuka (debugging)
-    window.addEventListener('load', function() {
-      // Bisa digunakan untuk pre-load data jika diperlukan
-    });
   </script>
 </body>
 </html>
