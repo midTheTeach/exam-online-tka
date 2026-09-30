@@ -1,29 +1,32 @@
-// Main Apps Script File - Backend untuk Ujian Online TKA
-// Deploy sebagai Web App
+// ===== KONFIGURASI SPREADSHEET =====
+// GANTI NILAI INI DENGAN SPREADSHEET ID ANDA
+const SPREADSHEET_ID = '1abc2def3ghi4jkl5mno6pqr7stu8vwx'; // GANTI INI!
 
-function doGet(e) {
-  return HtmlService.createHtmlOutput(getHtmlTemplate())
-    .setSandboxMode(HtmlService.SandboxMode.IFRAME)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+// Fungsi untuk mendapatkan spreadsheet
+function getSpreadsheet() {
+  return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
 
-function getHtmlTemplate() {
-  return HtmlService.createTemplateFromFile('Index').evaluate();
+// ===== MAIN FUNCTION =====
+function doGet(e) {
+  return HtmlService.createHtmlOutputFromFile('Index')
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 // ===== FUNGSI UNTUK MENGAMBIL SOAL =====
 function getQuestions() {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = getSpreadsheet();
     const sheet = ss.getSheetByName('Soal');
     
     if (!sheet) {
-      return { error: "Sheet 'Soal' tidak ditemukan" };
+      return { error: "Sheet 'Soal' tidak ditemukan. Pastikan sheet bernama 'Soal' sudah dibuat!" };
     }
     
     const lastRow = sheet.getLastRow();
     if (lastRow < 2) {
-      return [];
+      return { error: "Sheet 'Soal' kosong. Silakan isi soal terlebih dahulu!" };
     }
     
     const data = sheet.getRange(2, 1, lastRow - 1, 17).getValues();
@@ -41,7 +44,7 @@ function getQuestions() {
     return questions;
   } catch (e) {
     Logger.log("Error getQuestions: " + e);
-    return [];
+    return { error: "Error: " + e.toString() };
   }
 }
 
@@ -56,7 +59,7 @@ function parseQuestion(row) {
   const baseObj = {
     id: parseInt(id),
     type: type.toLowerCase().trim(),
-    question: question
+    question: question.toString()
   };
   
   switch(type.toLowerCase().trim()) {
@@ -64,11 +67,11 @@ function parseQuestion(row) {
       return {
         ...baseObj,
         options: [
-          { key: 'A', text: optA },
-          { key: 'B', text: optB },
-          { key: 'C', text: optC },
-          { key: 'D', text: optD }
-        ].filter(o => o.text && o.text.toString().trim()),
+          { key: 'A', text: optA ? optA.toString() : '' },
+          { key: 'B', text: optB ? optB.toString() : '' },
+          { key: 'C', text: optC ? optC.toString() : '' },
+          { key: 'D', text: optD ? optD.toString() : '' }
+        ].filter(o => o.text && o.text.trim()),
         correctAnswer: correctAnswer ? correctAnswer.toString().toUpperCase().trim() : ''
       };
       
@@ -76,16 +79,16 @@ function parseQuestion(row) {
       return {
         ...baseObj,
         options: [
-          { key: 'A', text: optA },
-          { key: 'B', text: optB },
-          { key: 'C', text: optC },
-          { key: 'D', text: optD },
-          { key: 'E', text: optE }
-        ].filter(o => o.text && o.text.toString().trim()),
+          { key: 'A', text: optA ? optA.toString() : '' },
+          { key: 'B', text: optB ? optB.toString() : '' },
+          { key: 'C', text: optC ? optC.toString() : '' },
+          { key: 'D', text: optD ? optD.toString() : '' },
+          { key: 'E', text: optE ? optE.toString() : '' }
+        ].filter(o => o.text && o.text.trim()),
         correctAnswer: correctAnswer ? correctAnswer.toString().split(',').map(x => x.trim().toUpperCase()) : [],
         minCorrect: parseInt(minCorrect) || 2,
         maxCorrect: parseInt(maxCorrect) || 3,
-        instruction: 'Pilih ' + (minCorrect || 2) + '-' + (maxCorrect || 3) + ' jawaban yang benar!'
+        instruction: 'Pilih ' + (parseInt(minCorrect) || 2) + '-' + (parseInt(maxCorrect) || 3) + ' jawaban yang benar!'
       };
       
     case 'true_false':
@@ -142,15 +145,24 @@ function parseTableRows(rowsString) {
 // ===== FUNGSI SUBMIT JAWABAN DAN HITUNG SKOR =====
 function submitAnswers(studentEmail, studentName, answers) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = getSpreadsheet();
     const soalSheet = ss.getSheetByName('Soal');
     const pesertaSheet = ss.getSheetByName('Peserta');
     
-    if (!soalSheet || !pesertaSheet) {
-      return { success: false, error: "Sheet tidak ditemukan" };
+    if (!soalSheet) {
+      return { success: false, error: "Sheet 'Soal' tidak ditemukan!" };
+    }
+    
+    if (!pesertaSheet) {
+      return { success: false, error: "Sheet 'Peserta' tidak ditemukan!" };
     }
     
     const questions = getQuestions();
+    
+    if (questions.error) {
+      return { success: false, error: questions.error };
+    }
+    
     let score = 0;
     let details = [];
     
@@ -188,7 +200,7 @@ function submitAnswers(studentEmail, studentName, answers) {
     
   } catch (e) {
     Logger.log("Error submitAnswers: " + e);
-    return { success: false, error: e.toString() };
+    return { success: false, error: "Error: " + e.toString() };
   }
 }
 
@@ -239,34 +251,9 @@ function checkAnswer(question, userAnswer) {
       );
       
     case 'essay':
-      // Essay biasanya dikoreksi manual, return false untuk auto-scoring
-      return false;
+      return false; // Essay dikoreksi manual
       
     default:
       return false;
-  }
-}
-
-// ===== FUNGSI SETUP SHEETS (OPTIONAL) =====
-function setupSheets() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  
-  // Buat sheet Soal jika belum ada
-  if (!ss.getSheetByName('Soal')) {
-    const soalSheet = ss.insertSheet('Soal', 0);
-    const headers = [
-      'ID Soal', 'Tipe', 'Pertanyaan', 'Opsi A', 'Opsi B', 'Opsi C', 'Opsi D', 'Opsi E',
-      'Jawaban Benar', 'Detail Soal', 'Min Jawaban Benar', 'Max Jawaban Benar',
-      'Baris Tabel (|)', 'Jawaban Tabel', 'Item Kiri Pasangan', 'Item Kanan Pasangan', 'Jawaban Pasangan'
-    ];
-    soalSheet.appendRow(headers);
-  }
-  
-  // Buat sheet Peserta jika belum ada
-  if (!ss.getSheetByName('Peserta')) {
-    const pesertaSheet = ss.insertSheet('Peserta', 1);
-    pesertaSheet.appendRow([
-      'Waktu', 'Email', 'Nama Peserta', 'Skor', 'Total Soal', 'Persentase', 'Detail Jawaban'
-    ]);
   }
 }
