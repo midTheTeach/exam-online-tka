@@ -1,6 +1,6 @@
 // Main Apps Script File - Backend untuk Ujian Online TKA
-
 // Deploy sebagai Web App
+
 function doGet(e) {
   return HtmlService.createHtmlOutput(getHtmlTemplate())
     .setSandboxMode(HtmlService.SandboxMode.IFRAME)
@@ -11,7 +11,7 @@ function getHtmlTemplate() {
   return HtmlService.createTemplateFromFile('Index').evaluate();
 }
 
-// Ambil semua soal dari Google Sheets
+// ===== FUNGSI UNTUK MENGAMBIL SOAL =====
 function getQuestions() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -21,7 +21,12 @@ function getQuestions() {
       return { error: "Sheet 'Soal' tidak ditemukan" };
     }
     
-    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 20).getValues();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      return [];
+    }
+    
+    const data = sheet.getRange(2, 1, lastRow - 1, 17).getValues();
     const questions = [];
     
     data.forEach((row, index) => {
@@ -35,12 +40,12 @@ function getQuestions() {
     
     return questions;
   } catch (e) {
-    Logger.log(e);
-    return { error: e.toString() };
+    Logger.log("Error getQuestions: " + e);
+    return [];
   }
 }
 
-// Parse data soal sesuai dengan tipe
+// ===== FUNGSI PARSE SOAL SESUAI TIPE =====
 function parseQuestion(row) {
   const [id, type, question, optA, optB, optC, optD, optE, correctAnswer, 
           details, minCorrect, maxCorrect, tableRows, tableAnswers, 
@@ -49,12 +54,12 @@ function parseQuestion(row) {
   if (!id || !type || !question) return null;
   
   const baseObj = {
-    id: id,
-    type: type,
+    id: parseInt(id),
+    type: type.toLowerCase().trim(),
     question: question
   };
   
-  switch(type) {
+  switch(type.toLowerCase().trim()) {
     case 'multiple_choice':
       return {
         ...baseObj,
@@ -63,8 +68,8 @@ function parseQuestion(row) {
           { key: 'B', text: optB },
           { key: 'C', text: optC },
           { key: 'D', text: optD }
-        ].filter(o => o.text),
-        correctAnswer: correctAnswer ? correctAnswer.split(',').map(x => x.trim()) : []
+        ].filter(o => o.text && o.text.toString().trim()),
+        correctAnswer: correctAnswer ? correctAnswer.toString().toUpperCase().trim() : ''
       };
       
     case 'multiple_choice_complex':
@@ -76,21 +81,22 @@ function parseQuestion(row) {
           { key: 'C', text: optC },
           { key: 'D', text: optD },
           { key: 'E', text: optE }
-        ].filter(o => o.text),
-        correctAnswer: correctAnswer ? correctAnswer.split(',').map(x => x.trim()) : [],
-        minCorrect: minCorrect || 2,
-        maxCorrect: maxCorrect || 3
+        ].filter(o => o.text && o.text.toString().trim()),
+        correctAnswer: correctAnswer ? correctAnswer.toString().split(',').map(x => x.trim().toUpperCase()) : [],
+        minCorrect: parseInt(minCorrect) || 2,
+        maxCorrect: parseInt(maxCorrect) || 3,
+        instruction: 'Pilih ' + (minCorrect || 2) + '-' + (maxCorrect || 3) + ' jawaban yang benar!'
       };
       
     case 'true_false':
       return {
         ...baseObj,
-        correctAnswer: correctAnswer ? correctAnswer.toUpperCase() : 'B' // B untuk Benar, S untuk Salah
+        correctAnswer: correctAnswer ? correctAnswer.toString().toUpperCase().trim() : 'B'
       };
       
     case 'true_false_table':
-      const rows = tableRows ? parseTableRows(tableRows) : [];
-      const answers = tableAnswers ? tableAnswers.split(',').map(x => x.trim().toUpperCase()) : [];
+      const rows = tableRows ? parseTableRows(tableRows.toString()) : [];
+      const answers = tableAnswers ? tableAnswers.toString().split(',').map(x => x.trim().toUpperCase()) : [];
       return {
         ...baseObj,
         rows: rows,
@@ -98,9 +104,15 @@ function parseQuestion(row) {
       };
       
     case 'matching':
-      const leftItems = matchLeft ? matchLeft.split('|').map(x => x.trim()) : [];
-      const rightItems = matchRight ? matchRight.split('|').map(x => x.trim()) : [];
-      const matchingAnswers = matchAnswers ? matchAnswers.split(',').map(x => x.trim()) : [];
+      const leftItems = matchLeft ? matchLeft.toString().split('|').map((x, idx) => ({
+        id: idx + 1,
+        text: x.trim()
+      })) : [];
+      const rightItems = matchRight ? matchRight.toString().split('|').map((x, idx) => ({
+        id: String.fromCharCode(65 + idx),
+        text: x.trim()
+      })) : [];
+      const matchingAnswers = matchAnswers ? matchAnswers.toString().split(',').map(x => x.trim()) : [];
       return {
         ...baseObj,
         leftItems: leftItems,
@@ -111,7 +123,7 @@ function parseQuestion(row) {
     case 'essay':
       return {
         ...baseObj,
-        placeholder: details || 'Tulis jawaban Anda di sini...'
+        placeholder: details ? details.toString() : 'Tulis jawaban Anda di sini...'
       };
       
     default:
@@ -127,7 +139,7 @@ function parseTableRows(rowsString) {
   }));
 }
 
-// Submit jawaban dan hitung skor
+// ===== FUNGSI SUBMIT JAWABAN DAN HITUNG SKOR =====
 function submitAnswers(studentEmail, studentName, answers) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -175,28 +187,31 @@ function submitAnswers(studentEmail, studentName, answers) {
     };
     
   } catch (e) {
-    Logger.log(e);
+    Logger.log("Error submitAnswers: " + e);
     return { success: false, error: e.toString() };
   }
 }
 
-// Cek jawaban berdasarkan tipe soal
+// ===== FUNGSI CEK JAWABAN BERDASARKAN TIPE SOAL =====
 function checkAnswer(question, userAnswer) {
-  if (!userAnswer) return false;
+  if (userAnswer === null || userAnswer === undefined || userAnswer === '') return false;
   
   switch(question.type) {
     case 'multiple_choice':
+      return userAnswer.toString().toUpperCase() === question.correctAnswer.toString().toUpperCase();
+      
     case 'true_false':
-      return userAnswer === question.correctAnswer[0];
+      return userAnswer.toString().toUpperCase() === question.correctAnswer.toString().toUpperCase();
       
     case 'multiple_choice_complex':
       const userAnswers = Array.isArray(userAnswer) ? userAnswer : [userAnswer];
       const correctAnswers = question.correctAnswer || [];
       
       if (userAnswers.length !== correctAnswers.length) return false;
+      if (userAnswers.length === 0) return false;
       
-      const userSet = new Set(userAnswers.sort());
-      const correctSet = new Set(correctAnswers.sort());
+      const userSet = new Set(userAnswers.map(x => x.toString().toUpperCase()).sort());
+      const correctSet = new Set(correctAnswers.map(x => x.toString().toUpperCase()).sort());
       
       return userSet.size === correctSet.size && 
              [...userSet].every(item => correctSet.has(item));
@@ -206,9 +221,10 @@ function checkAnswer(question, userAnswer) {
       const correctTableAnswers = question.correctAnswer || [];
       
       if (tableAnswers.length !== correctTableAnswers.length) return false;
+      if (tableAnswers.length === 0) return false;
       
       return tableAnswers.every((ans, idx) => 
-        ans.toUpperCase() === correctTableAnswers[idx].toUpperCase()
+        ans.toString().toUpperCase() === correctTableAnswers[idx].toString().toUpperCase()
       );
       
     case 'matching':
@@ -216,13 +232,14 @@ function checkAnswer(question, userAnswer) {
       const correctMatching = question.correctAnswer || [];
       
       if (matchingAns.length !== correctMatching.length) return false;
+      if (matchingAns.length === 0) return false;
       
       return matchingAns.every((ans, idx) => 
-        ans === correctMatching[idx]
+        ans.toString().trim() === correctMatching[idx].toString().trim()
       );
       
     case 'essay':
-      // Essay biasanya dikoreksi manual
+      // Essay biasanya dikoreksi manual, return false untuk auto-scoring
       return false;
       
     default:
@@ -230,40 +247,26 @@ function checkAnswer(question, userAnswer) {
   }
 }
 
-// Function untuk setup Google Sheets template
+// ===== FUNGSI SETUP SHEETS (OPTIONAL) =====
 function setupSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
   // Buat sheet Soal jika belum ada
   if (!ss.getSheetByName('Soal')) {
-    const soalSheet = ss.insertSheet('Soal');
+    const soalSheet = ss.insertSheet('Soal', 0);
     const headers = [
       'ID Soal', 'Tipe', 'Pertanyaan', 'Opsi A', 'Opsi B', 'Opsi C', 'Opsi D', 'Opsi E',
       'Jawaban Benar', 'Detail Soal', 'Min Jawaban Benar', 'Max Jawaban Benar',
       'Baris Tabel (|)', 'Jawaban Tabel', 'Item Kiri Pasangan', 'Item Kanan Pasangan', 'Jawaban Pasangan'
     ];
     soalSheet.appendRow(headers);
-    
-    // Contoh soal
-    soalSheet.appendRow([
-      1, 'multiple_choice', 'Ibu kota Indonesia adalah?', 'Jakarta', 'Surabaya', 'Bandung', 'Medan', '',
-      'A', '', '', '', '', '', '', '', ''
-    ]);
   }
   
   // Buat sheet Peserta jika belum ada
   if (!ss.getSheetByName('Peserta')) {
-    const pesertaSheet = ss.insertSheet('Peserta');
+    const pesertaSheet = ss.insertSheet('Peserta', 1);
     pesertaSheet.appendRow([
       'Waktu', 'Email', 'Nama Peserta', 'Skor', 'Total Soal', 'Persentase', 'Detail Jawaban'
     ]);
   }
-}
-
-// Jalankan setup saat pertama kali
-function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  ui.createMenu('Ujian Online')
-    .addItem('Setup Sheet', 'setupSheets')
-    .addToUi();
 }
